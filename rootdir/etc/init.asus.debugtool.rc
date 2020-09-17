@@ -1,0 +1,324 @@
+on fs
+    wait /dev/block/bootdevice/by-name/asdf
+    exec /system/bin/e2fsck -p /dev/block/bootdevice/by-name/asdf
+    mount ext4 /dev/block/bootdevice/by-name/asdf /asdf nosuid nodev noatime barrier=1
+
+    chmod 0775 /asdf
+    restorecon_recursive /asdf
+
+    # wait /dev/block/bootdevice/by-name/logcat
+    exec /system/bin/e2fsck -p /dev/block/bootdevice/by-name/logcat
+    mount ext4 /dev/block/bootdevice/by-name/logcat /logcat nosuid nodev noatime barrier=1
+    restorecon_recursive /logcat
+
+on boot
+    chmod 0444 /proc/cmdline
+
+on post-fs-data
+# Add logcat_log folder
+    write /sys/fs/selinux/log 1
+    mkdir /data/logcat_log
+    start logcat-asdf
+    start logcat-crash
+
+# Add asusdebug
+    chmod 0777 /proc/asusdebug
+    write /proc/asusdebug load
+    write /proc/asusdebug get_lastshutdown_log
+
+    mkdir /data/anr
+    mkdir /data/tombstones
+    mkdir -p /data/media/asus_log
+    mkdir /asdf/asdf_logcat
+
+    chown system system /data/anr
+    chown system system /data/tombstones
+    chown sdcard_rw sdcard_rw /data/media/asus_log
+    chown system system /data/logcat_log
+    chown system system /asdf/asdf_logcat
+
+    chmod 0777 /data/anr
+    chmod 0777 /data/tombstones
+    chmod 0757 /data/media/asus_log
+    chmod 0777 /data/logcat_log
+    chmod 0775 /asdf/asdf_logcat
+
+    chmod 0666 /asdf/ASUSEvtlog.txt
+    chmod 0666 /asdf/ASUSEvtlog_old.txt
+
+    restorecon /data/logcat_log
+    restorecon /data/everbootup
+    restorecon /asdf/asdf_logcat
+
+# For beta user repartition
+    mkdir /logcat/logcat_log
+    chown system system /logcat/logcat_log
+    chmod 0775 /logcat/logcat_log
+
+#service block start ...
+service asus_kernelmsg /system/vendor/bin/init.asus.kernelmessage.sh
+    class main
+    user root
+    group root
+    disabled
+    oneshot
+    seclabel u:r:savelogmtp:s0
+
+on property:persist.vendor.asus.kernelmessage=0
+    start asus_kernelmsg
+
+on property:persist.vendor.asus.kernelmessage=7
+    start asus_kernelmsg
+
+service check-datalog /system/bin/sh /vendor/bin/init.asus.checkdatalog.sh
+    class core
+    user root
+    group system
+    oneshot
+    seclabel u:r:savelogmtp:s0
+
+on property:persist.vendor.asus.startlog=1
+    write /sys/fs/selinux/log 1
+    start check_last
+    start check-datalog
+    write /sys/module/msm_rtb/parameters/enable 1
+    write /sys/devices/platform/goodix_ts.0/enable_touch_debug 1
+
+on property:persist.vendor.asus.startlog=0
+    start check_last
+    start check-datalog
+    write /sys/module/msm_rtb/parameters/enable 0
+    write /sys/devices/platform/goodix_ts.0/enable_touch_debug 0
+
+#logcat log, the default is -b main -b system -b crash.
+service logcat /system/bin/logcat -b main -b system -b crash -r 10000 -n ${persist.vendor.asus.logcat.filenum:-20} -v threadtime -v printable -f /data/logcat_log/logcat.txt
+    class main
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+#log_kernel
+service logcat-kernel /system/bin/logcat -r 10000 -b kernel -n ${persist.vendor.asus.logcat.filenum:-20} -v threadtime -v printable -f /data/logcat_log/kernel.log
+    class main
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+#log_radio
+service logcat-radio /system/bin/logcat -r 10000 -b radio -n ${persist.vendor.asus.logcat.filenum:-10} -v time -v printable -f /data/logcat_log/logcat-radio.txt
+    class main
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+#log_events
+service logcat-events /system/bin/logcat -r 10000 -b events -n ${persist.vendor.asus.logcat.filenum:-10} -v threadtime -v printable -f /data/logcat_log/logcat-events.txt
+    class main
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+#log_main to asdf folder
+service logcat-asdf /system/bin/logcat -b kernel -b main -b system -b crash -r 10000 -n 2 -v threadtime -v printable -f /asdf/asdf_logcat/asdf-logcat.txt
+    class main
+    disabled
+    oneshot
+    seclabel u:r:savelogmtp:s0
+
+service logcat-crash /system/bin/logcat -b crash -r 1000 -n 2 -v threadtime -v printable -f /asdf/logcat-crash.txt
+    class main
+    disabled
+    oneshot
+    seclabel u:r:savelogmtp:s0
+
+# For beta user repartition /logcat
+service beta-logcat /system/bin/logcat -b main -b system -b crash -r 10000 -n ${persist.vendor.asus.logcat.filenum:-20} -v threadtime -v printable -f /logcat/logcat_log/logcat.txt
+    class main
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+service beta-logcat-kernel /system/bin/logcat -r 10000 -b kernel -n ${persist.vendor.asus.logcat.filenum:-20} -v threadtime -v printable -f /logcat/logcat_log/kernel.log
+    class main
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+service beta-logcat-radio /system/bin/logcat -r 10000 -b radio -n ${persist.vendor.asus.logcat.filenum:-10} -v time -v printable -f /logcat/logcat_log/logcat-radio.txt
+    class main
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+service beta-logcat-events /system/bin/logcat -r 10000 -b events -n ${persist.vendor.asus.logcat.filenum:-10} -v threadtime -v printable -f /logcat/logcat_log/logcat-events.txt
+    class main
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+# ASUSLogTool save log
+service savelogmtp /system/vendor/bin/savelogmtp.sh
+    class main
+    user root
+    group sdcard_rw
+    oneshot
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+service cscclearlog /system/vendor/bin/sh /vendor/bin/cscclearlog.sh
+    user root
+    group root
+    disabled
+    oneshot
+    seclabel u:r:savelogmtp:s0
+
+on property:vendor.asus.clearlog=1
+    start cscclearlog
+
+# Check for LastShutdown Logs
+service check_last /system/vendor/bin/sh /system/vendor/bin/init.asus.check_last.sh
+    user root
+    disabled
+    oneshot
+    seclabel u:r:savelogmtp:s0
+
+on property:persist.vendor.sys.downloadmode.enable=1
+    start check_last
+
+on property:persist.vendor.sys.downloadmode.enable=0
+    start check_last
+
+# Check for Abnormal Shutdown Logs
+service asus_chk_asdf /system/vendor/bin/sh /system/vendor/bin/init.asus.check_asdf.sh
+    user root
+    group root
+    disabled
+    oneshot
+    seclabel u:r:savelogmtp:s0
+
+on property:sys.boot_completed=1
+    start asus_chk_asdf
+
+on property:persist.vendor.radio.check_asdf=*
+    start asus_chk_asdf
+
+# Setenforce
+service set_enforce /system/vendor/bin/sh /vendor/bin/setenforce.sh
+    class main
+    user root
+    oneshot
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+on property:vendor.asus.setenforce=1
+    start set_enforce
+
+on property:vendor.asus.setenforce=0
+    start set_enforce
+
+# Tar ASUSEvtlog
+service tar-evtlog /system/vendor/bin/sh /vendor/bin/tarevtlog.sh
+    class main
+    user root
+    group sdcard_rw
+    oneshot
+    seclabel u:r:savelogmtp:s0
+
+on property:persist.vendor.asus.tarevtlog=1
+    start tar-evtlog
+
+# Trigger kernel panic
+service trigger_panic /system/vendor/bin/sh /vendor/bin/triggerpanic.sh
+    user root
+    group root
+    oneshot
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+on property:vendor.asus.triggerpanic=1
+    start trigger_panic
+
+# UTS services
+service savelogs /system/vendor/bin/sh /system/vendor/bin/savelogs.sh
+    class main
+    user root
+    group sdcard_rw
+    oneshot
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+service savelogscomplete  /system/bin/sh /system/vendor/bin/savelogs_complete.sh
+    user root
+    group root
+    oneshot
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+service asusdumpstate /system/bin/sh /system/vendor/bin/UTSdumpstate.sh
+    user root
+    group root
+    oneshot
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+on property:persist.vendor.asus.foregroundapp=com.asus.logtool
+    write /sys/fs/selinux/log 1
+
+on property:persist.vendor.asus.mupload.enable=1
+    write /sys/fs/selinux/log 1
+
+on property:persist.vendor.asus.savelogs=*
+    start savelogs
+
+on property:persist.vendor.asus.savelogs.complete=1
+    start savelogscomplete
+
+on property:persist.vendor.asus.dumpstate=1
+    start asusdumpstate
+
+service checklogsize /system/vendor/bin/sh /system/vendor/bin/init.asus.checklogsize.sh
+    class main
+    user root
+    group sdcard_rw
+    oneshot
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+on property:persist.vendor.asus.checklogsize=*
+    start checklogsize
+
+service procrankdump /system/vendor/bin/sh /system/vendor/bin/procrankdump.sh
+    user root
+    group root
+    disabled
+    oneshot
+    seclabel u:r:savelogmtp:s0
+
+service execkernelevt /system/vendor/bin/sh /system/vendor/bin/execkernelevt.sh
+    user root
+    group root
+    disabled
+    oneshot
+    seclabel u:r:dumpstate:s0
+
+# Beta user repartition
+service rebootRepartition /system/vendor/bin/repartition.sh
+    user root
+    group sdcard_rw
+    disabled
+    oneshot
+    seclabel u:r:savelogmtp:s0
+
+on property:persist.vendor.asus.mupload.enable=1
+    start rebootRepartition
+
+# Check & load devcfg
+service check_devcfg /system/vendor/bin/sh /system/vendor/bin/init.asus.checkdevcfg.sh
+    class main
+    user root
+    group system
+    oneshot
+    disabled
+    seclabel u:r:savelogmtp:s0
+
+on property:persist.vendor.asus.checkdevcfg=1
+    start check_devcfg
+
+#ASUS_BSP for charger mode logcat +++
+service logcat-charger /system/bin/logcat -b kernel -b main -b system  -b crash -r 10000 -n 1 -v threadtime -f /asdf/logcat-charger.txt
+    class late_start
+    disabled
+seclabel u:r:savelogmtp:s0
+#ASUS_BSP for charger mode logcat +++
